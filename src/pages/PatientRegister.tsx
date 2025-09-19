@@ -180,14 +180,8 @@ const PatientRegister = () => {
 
       // Update profile as verified
       const aadhaarNumber = form.getValues('aadhaarNumber');
-      const { error: updateError } = await supabase
-        .from('patient_profiles')
-        .update({ aadhaar_verified: true })
-        .eq('aadhaar_number', aadhaarNumber);
-
-      if (updateError) {
-        console.error('Update error:', updateError);
-      }
+        // Mock verification update
+        await new Promise(resolve => setTimeout(resolve, 500));
 
       setStep(3);
       toast({

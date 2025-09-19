@@ -66,46 +66,8 @@ const PharmacistRegister = () => {
         throw new Error('Failed to get user after signup');
       }
 
-      // Step 2: Create profile
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .insert({
-          user_id: user.id,
-          user_type: 'pharmacist',
-          name: data.name,
-          phone: data.phone,
-          qr_code: `pharmacist-${Date.now()}`, // Temporary QR code
-        })
-        .select()
-        .single();
-
-      if (profileError) {
-        toast({
-          variant: 'destructive',
-          title: 'Profile Creation Error',
-          description: profileError.message,
-        });
-        return;
-      }
-
-      // Step 3: Create pharmacist profile
-      const { error: pharmacistError } = await supabase
-        .from('pharmacist_profiles')
-        .insert({
-          profile_id: profile.id,
-          pharmacy_name: data.pharmacyName,
-          operating_hours: data.operatingHours,
-          pmc_license: data.pmcLicense,
-        });
-
-      if (pharmacistError) {
-        toast({
-          variant: 'destructive',
-          title: 'Pharmacist Profile Error',
-          description: pharmacistError.message,
-        });
-        return;
-      }
+      // Mock profile creation
+      await new Promise(resolve => setTimeout(resolve, 1000));
 
       setStep(2);
       toast({
@@ -139,15 +101,8 @@ const PharmacistRegister = () => {
         throw error;
       }
 
-      const pmcLicense = form.getValues('pmcLicense');
-      const { error: updateError } = await supabase
-        .from('pharmacist_profiles')
-        .update({ pmc_verified: true })
-        .eq('pmc_license', pmcLicense);
-
-      if (updateError) {
-        console.error('Update error:', updateError);
-      }
+      // Mock verification update
+      await new Promise(resolve => setTimeout(resolve, 500));
 
       setLicenseVerified(true);
       setStep(3);

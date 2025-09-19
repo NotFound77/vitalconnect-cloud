@@ -8,8 +8,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '@/components/auth/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import MediDoubt from '@/components/MediDoubt';
 import { 
   Stethoscope, 
   Users, 
@@ -22,255 +22,228 @@ import {
   Eye,
   Activity,
   Brain,
-  User
+  User,
+  QrCode,
+  Clock
 } from 'lucide-react';
-import { format } from 'date-fns';
+import { format, addDays } from 'date-fns';
 
-interface DoctorProfile {
+interface Appointment {
   id: string;
-  profile: {
-    name: string;
-    phone: string;
-  };
-  specialization: string;
-  experience: number;
-  imr_license: string;
-  imr_verified: boolean;
+  patientName: string;
+  patientAge: number;
+  appointmentDate: string;
+  appointmentTime: string;
+  type: string;
+  status: 'upcoming' | 'completed' | 'cancelled';
+  notes?: string;
 }
 
-interface Patient {
-  id: string;
-  profile: {
-    name: string;
-    phone: string;
-  };
-  age: number;
-  sex: string;
-  aadhaar_verified: boolean;
+interface QRVerification {
+  patientId: string;
+  patientName: string;
+  patientAge: number;
+  patientSex: string;
+  verified: boolean;
+  medicalHistory: string[];
 }
 
-interface MedicalRecord {
-  id: string;
+interface PrescriptionForm {
+  patientId: string;
+  patientName: string;
   diagnosis: string;
-  symptoms: string[];
-  notes: string;
-  visit_date: string;
-  follow_up_date: string;
-  patient_profile: {
-    profile: {
-      name: string;
-    };
-    age: number;
-    sex: string;
-  };
-}
-
-interface Prescription {
-  id: string;
-  prescription_number: string;
-  status: string;
-  issued_date: string;
-  patient_profile: {
-    profile: {
-      name: string;
-    };
-  };
-  prescription_items: {
-    medication: {
-      name: string;
-    };
+  medicines: {
+    name: string;
+    dosage: string;
+    frequency: string;
+    duration: string;
+    instructions: string;
   }[];
+  notes: string;
 }
 
 const DoctorDashboard = () => {
   const { user } = useAuth();
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
-  const [doctorProfile, setDoctorProfile] = useState<DoctorProfile | null>(null);
-  const [patients, setPatients] = useState<Patient[]>([]);
-  const [medicalRecords, setMedicalRecords] = useState<MedicalRecord[]>([]);
-  const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [activeTab, setActiveTab] = useState('overview');
-
-  // New record form state
-  const [newRecord, setNewRecord] = useState({
-    patient_id: '',
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [qrCode, setQrCode] = useState('');
+  const [verifiedPatient, setVerifiedPatient] = useState<QRVerification | null>(null);
+  const [prescriptionForm, setPrescriptionForm] = useState<PrescriptionForm>({
+    patientId: '',
+    patientName: '',
     diagnosis: '',
-    symptoms: '',
-    notes: '',
-    follow_up_date: '',
-    vital_signs: {
-      blood_pressure: '',
-      heart_rate: '',
-      temperature: '',
-      weight: ''
-    }
+    medicines: [{ name: '', dosage: '', frequency: '', duration: '', instructions: '' }],
+    notes: ''
   });
+  const [showPrescriptionForm, setShowPrescriptionForm] = useState(false);
 
   useEffect(() => {
-    if (user) {
-      fetchDoctorData();
-    }
-  }, [user]);
+    fetchMockData();
+  }, []);
 
-  const fetchDoctorData = async () => {
-    try {
-      // Fetch doctor profile
-      const { data: profileData, error: profileError } = await supabase
-        .from('profiles')
-        .select(`
-          *,
-          doctor_profiles!inner (
-            id,
-            specialization,
-            experience,
-            imr_license,
-            imr_verified
-          )
-        `)
-        .eq('user_id', user?.id)
-        .single();
+  const fetchMockData = async () => {
+    setLoading(true);
+    
+    // Simulate API delay
+    await new Promise(resolve => setTimeout(resolve, 1000));
 
-      if (profileError) throw profileError;
+    // Mock appointments data
+    const mockAppointments: Appointment[] = [
+      {
+        id: '1',
+        patientName: 'John Doe',
+        patientAge: 35,
+        appointmentDate: '2024-02-20',
+        appointmentTime: '10:30 AM',
+        type: 'Regular Checkup',
+        status: 'upcoming',
+        notes: 'Annual physical examination'
+      },
+      {
+        id: '2',
+        patientName: 'Jane Smith',
+        patientAge: 28,
+        appointmentDate: '2024-02-20',
+        appointmentTime: '02:00 PM',
+        type: 'Follow-up',
+        status: 'upcoming',
+        notes: 'Follow-up for blood pressure'
+      },
+      {
+        id: '3',
+        patientName: 'Robert Johnson',
+        patientAge: 45,
+        appointmentDate: '2024-02-19',
+        appointmentTime: '11:00 AM',
+        type: 'Consultation',
+        status: 'completed'
+      }
+    ];
 
-      const profile = {
-        id: profileData.doctor_profiles[0].id,
-        profile: {
-          name: profileData.name,
-          phone: profileData.phone
-        },
-        ...profileData.doctor_profiles[0]
-      };
-      setDoctorProfile(profile);
-
-      // Fetch medical records created by this doctor
-      const { data: recordsData, error: recordsError } = await supabase
-        .from('medical_records')
-        .select(`
-          *,
-          patient_profile:patient_profiles!inner (
-            profile:profiles!inner (name),
-            age,
-            sex
-          )
-        `)
-        .eq('doctor_profile_id', profile.id)
-        .order('visit_date', { ascending: false })
-        .limit(20);
-
-      if (recordsError) throw recordsError;
-      setMedicalRecords(recordsData || []);
-
-      // Fetch prescriptions created by this doctor
-      const { data: prescriptionsData, error: prescriptionsError } = await supabase
-        .from('prescriptions')
-        .select(`
-          *,
-          patient_profile:patient_profiles!inner (
-            profile:profiles!inner (name)
-          ),
-          prescription_items (
-            medication:medications (name)
-          )
-        `)
-        .eq('doctor_profile_id', profile.id)
-        .order('issued_date', { ascending: false })
-        .limit(20);
-
-      if (prescriptionsError) throw prescriptionsError;
-      setPrescriptions(prescriptionsData || []);
-
-      // Fetch all patients (for search)
-      const { data: patientsData, error: patientsError } = await supabase
-        .from('patient_profiles')
-        .select(`
-          id,
-          age,
-          sex,
-          aadhaar_verified,
-          profile:profiles!inner (name, phone)
-        `)
-        .limit(100);
-
-      if (patientsError) throw patientsError;
-      setPatients(patientsData || []);
-
-    } catch (error: Error | "null") {
-      toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: error.message,
-      });
-    } finally {
-      setLoading(false);
-    }
+    setAppointments(mockAppointments);
+    setLoading(false);
   };
 
-  const createMedicalRecord = async () => {
-    if (!newRecord.patient_id || !newRecord.diagnosis) {
+  const verifyQRCode = async () => {
+    if (!qrCode.trim()) {
       toast({
         variant: 'destructive',
-        title: 'Missing Information',
-        description: 'Please select a patient and enter a diagnosis',
+        title: 'Missing QR Code',
+        description: 'Please enter a QR code to verify',
       });
       return;
     }
 
-    try {
-      const { data, error } = await supabase
-        .from('medical_records')
-        .insert({
-          patient_profile_id: newRecord.patient_id,
-          doctor_profile_id: doctorProfile?.id,
-          diagnosis: newRecord.diagnosis,
-          symptoms: newRecord.symptoms ? newRecord.symptoms.split(',').map(s => s.trim()) : [],
-          notes: newRecord.notes,
-          follow_up_date: newRecord.follow_up_date || null,
-          vital_signs: Object.keys(newRecord.vital_signs).some(key => 
-            newRecord.vital_signs[key as keyof typeof newRecord.vital_signs]
-          ) ? newRecord.vital_signs : null
-        })
-        .select()
-        .single();
+    setLoading(true);
+    
+    // Simulate QR verification process
+    await new Promise(resolve => setTimeout(resolve, 2000));
 
-      if (error) throw error;
+    // Mock verification result
+    const mockPatient: QRVerification = {
+      patientId: qrCode,
+      patientName: 'John Doe',
+      patientAge: 35,
+      patientSex: 'Male',
+      verified: true,
+      medicalHistory: [
+        'Hypertension (2020)',
+        'Diabetes Type 2 (2019)',
+        'Allergic to Penicillin'
+      ]
+    };
 
-      toast({
-        title: 'Medical Record Created',
-        description: 'Successfully created new medical record',
-      });
+    setVerifiedPatient(mockPatient);
+    setPrescriptionForm(prev => ({
+      ...prev,
+      patientId: mockPatient.patientId,
+      patientName: mockPatient.patientName
+    }));
+    setLoading(false);
 
-      // Reset form
-      setNewRecord({
-        patient_id: '',
-        diagnosis: '',
-        symptoms: '',
-        notes: '',
-        follow_up_date: '',
-        vital_signs: {
-          blood_pressure: '',
-          heart_rate: '',
-          temperature: '',
-          weight: ''
-        }
-      });
-
-      // Refresh data
-      fetchDoctorData();
-    } catch (error: any) {
-      toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: error.message,
-      });
-    }
+    toast({
+      title: 'Patient Verified',
+      description: `Successfully verified ${mockPatient.patientName}`,
+    });
   };
 
-  const filteredPatients = patients.filter(patient =>
-    patient.profile.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    patient.profile.phone.includes(searchTerm)
-  );
+  const addMedicine = () => {
+    setPrescriptionForm(prev => ({
+      ...prev,
+      medicines: [...prev.medicines, { name: '', dosage: '', frequency: '', duration: '', instructions: '' }]
+    }));
+  };
+
+  const updateMedicine = (index: number, field: string, value: string) => {
+    setPrescriptionForm(prev => ({
+      ...prev,
+      medicines: prev.medicines.map((med, i) => 
+        i === index ? { ...med, [field]: value } : med
+      )
+    }));
+  };
+
+  const removeMedicine = (index: number) => {
+    setPrescriptionForm(prev => ({
+      ...prev,
+      medicines: prev.medicines.filter((_, i) => i !== index)
+    }));
+  };
+
+  const createPrescription = async () => {
+    if (!prescriptionForm.patientName || !prescriptionForm.diagnosis) {
+      toast({
+        variant: 'destructive',
+        title: 'Missing Information',
+        description: 'Please fill in patient details and diagnosis',
+      });
+      return;
+    }
+
+    if (prescriptionForm.medicines.some(med => !med.name || !med.dosage)) {
+      toast({
+        variant: 'destructive',
+        title: 'Incomplete Medicines',
+        description: 'Please complete all medicine details',
+      });
+      return;
+    }
+
+    setLoading(true);
+    
+    // Simulate prescription creation
+    await new Promise(resolve => setTimeout(resolve, 1500));
+
+    const prescriptionNumber = `RX${Date.now()}`;
+    
+    toast({
+      title: 'Prescription Created',
+      description: `Digital prescription ${prescriptionNumber} has been created successfully`,
+    });
+
+    // Reset form
+    setPrescriptionForm({
+      patientId: '',
+      patientName: '',
+      diagnosis: '',
+      medicines: [{ name: '', dosage: '', frequency: '', duration: '', instructions: '' }],
+      notes: ''
+    });
+    setVerifiedPatient(null);
+    setQrCode('');
+    setShowPrescriptionForm(false);
+    setLoading(false);
+  };
+
+  const getStatusBadgeVariant = (status: string) => {
+    switch (status) {
+      case 'upcoming': return 'default';
+      case 'completed': return 'secondary';
+      case 'cancelled': return 'destructive';
+      default: return 'secondary';
+    }
+  };
 
   if (loading) {
     return (
@@ -283,23 +256,10 @@ const DoctorDashboard = () => {
     );
   }
 
-  if (!doctorProfile) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <Card className="max-w-md">
-          <CardHeader>
-            <CardTitle>Profile Not Found</CardTitle>
-            <CardDescription>
-              Unable to load your doctor profile. Please contact support.
-            </CardDescription>
-          </CardHeader>
-        </Card>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-background">
+      <MediDoubt />
+      
       {/* Header */}
       <div className="border-b bg-card">
         <div className="max-w-7xl mx-auto px-4 py-6">
@@ -307,19 +267,18 @@ const DoctorDashboard = () => {
             <div className="flex items-center space-x-4">
               <Avatar className="w-16 h-16">
                 <AvatarFallback>
-                  <AvatarInitials name={doctorProfile.profile.name} />
+                  <AvatarInitials name={user?.email || 'Doctor'} />
                 </AvatarFallback>
               </Avatar>
               <div>
                 <h1 className="text-2xl font-bold text-foreground">
-                  Dr. {doctorProfile.profile.name}
+                  Dr. {user?.email?.split('@')[0] || 'Doctor'}
                 </h1>
                 <p className="text-muted-foreground">
-                  {doctorProfile.specialization} • {doctorProfile.experience} years experience
+                  General Medicine • 10+ years experience
                 </p>
                 <p className="text-sm text-muted-foreground">
-                  IMR: {doctorProfile.imr_license} • 
-                  {doctorProfile.imr_verified ? ' Verified' : ' Pending Verification'}
+                  IMR: IMR123456 • Verified
                 </p>
               </div>
             </div>
@@ -343,11 +302,14 @@ const DoctorDashboard = () => {
           <Card>
             <CardContent className="p-6">
               <div className="flex items-center">
-                <Users className="w-8 h-8 text-primary" />
+                <Calendar className="w-8 h-8 text-primary" />
                 <div className="ml-4">
-                  <p className="text-sm font-medium text-muted-foreground">Patients Treated</p>
+                  <p className="text-sm font-medium text-muted-foreground">Today's Appointments</p>
                   <p className="text-2xl font-bold">
-                    {new Set(medicalRecords.map(r => r.patient_profile)).size}
+                    {appointments.filter(a => 
+                      new Date(a.appointmentDate).toDateString() === new Date().toDateString() && 
+                      a.status === 'upcoming'
+                    ).length}
                   </p>
                 </div>
               </div>
@@ -357,10 +319,10 @@ const DoctorDashboard = () => {
           <Card>
             <CardContent className="p-6">
               <div className="flex items-center">
-                <FileText className="w-8 h-8 text-secondary" />
+                <Users className="w-8 h-8 text-secondary" />
                 <div className="ml-4">
-                  <p className="text-sm font-medium text-muted-foreground">Medical Records</p>
-                  <p className="text-2xl font-bold">{medicalRecords.length}</p>
+                  <p className="text-sm font-medium text-muted-foreground">Total Patients</p>
+                  <p className="text-2xl font-bold">156</p>
                 </div>
               </div>
             </CardContent>
@@ -369,10 +331,10 @@ const DoctorDashboard = () => {
           <Card>
             <CardContent className="p-6">
               <div className="flex items-center">
-                <Pill className="w-8 h-8 text-accent" />
+                <FileText className="w-8 h-8 text-accent" />
                 <div className="ml-4">
                   <p className="text-sm font-medium text-muted-foreground">Prescriptions</p>
-                  <p className="text-2xl font-bold">{prescriptions.length}</p>
+                  <p className="text-2xl font-bold">48</p>
                 </div>
               </div>
             </CardContent>
@@ -384,11 +346,7 @@ const DoctorDashboard = () => {
                 <TrendingUp className="w-8 h-8 text-success" />
                 <div className="ml-4">
                   <p className="text-sm font-medium text-muted-foreground">This Month</p>
-                  <p className="text-2xl font-bold">
-                    {medicalRecords.filter(r => 
-                      new Date(r.visit_date).getMonth() === new Date().getMonth()
-                    ).length}
-                  </p>
+                  <p className="text-2xl font-bold">24</p>
                 </div>
               </div>
             </CardContent>
@@ -396,306 +354,149 @@ const DoctorDashboard = () => {
         </div>
 
         {/* Main Content Tabs */}
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-5">
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="patients">Patients</TabsTrigger>
-            <TabsTrigger value="records">Records</TabsTrigger>
-            <TabsTrigger value="prescriptions">Prescriptions</TabsTrigger>
-            <TabsTrigger value="analytics">Analytics</TabsTrigger>
+        <Tabs defaultValue="appointments" className="space-y-6">
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="appointments">Appointments</TabsTrigger>
+            <TabsTrigger value="qr-verify">QR Verification</TabsTrigger>
+            <TabsTrigger value="prescriptions">Create Prescription</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="overview" className="space-y-6">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Recent Medical Records */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Recent Medical Records</CardTitle>
-                  <CardDescription>Latest patient consultations</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    {medicalRecords.slice(0, 5).map((record) => (
-                      <div key={record.id} className="border-l-4 border-primary pl-4">
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <p className="font-medium">{record.diagnosis}</p>
-                            <p className="text-sm text-muted-foreground">
-                              {record.patient_profile.profile.name} • {record.patient_profile.age}y, {record.patient_profile.sex}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              {format(new Date(record.visit_date), 'MMM dd, yyyy')}
-                            </p>
-                          </div>
-                          <Button size="sm" variant="ghost">
-                            <Eye className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                    {medicalRecords.length === 0 && (
-                      <p className="text-center text-muted-foreground py-8">
-                        No medical records yet
-                      </p>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Quick Actions */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Quick Actions</CardTitle>
-                  <CardDescription>Common tasks and AI tools</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    <Button className="w-full justify-start" onClick={() => setActiveTab('patients')}>
-                      <Plus className="w-4 h-4 mr-2" />
-                      Create New Record
-                    </Button>
-                    <Button variant="outline" className="w-full justify-start">
-                      <Pill className="w-4 h-4 mr-2" />
-                      Write Prescription
-                    </Button>
-                    <Button variant="outline" className="w-full justify-start">
-                      <Brain className="w-4 h-4 mr-2" />
-                      AI Diagnosis Assistant
-                    </Button>
-                    <Button variant="outline" className="w-full justify-start">
-                      <TrendingUp className="w-4 h-4 mr-2" />
-                      Prescription Analytics
-                    </Button>
-                    <Button variant="outline" className="w-full justify-start">
-                      <Calendar className="w-4 h-4 mr-2" />
-                      View Schedule
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="patients" className="space-y-6">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Patient Search */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Find Patient</CardTitle>
-                  <CardDescription>Search for patients to create records</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div className="relative">
-                      <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        placeholder="Search by name or phone..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        className="pl-10"
-                      />
-                    </div>
-                    
-                    <div className="max-h-64 overflow-y-auto space-y-2">
-                      {filteredPatients.slice(0, 10).map((patient) => (
-                        <div 
-                          key={patient.id} 
-                          className={`p-3 border rounded-lg cursor-pointer transition-colors hover:bg-muted/50 ${
-                            newRecord.patient_id === patient.id ? 'bg-primary/10 border-primary' : ''
-                          }`}
-                          onClick={() => setNewRecord(prev => ({ ...prev, patient_id: patient.id }))}
-                        >
-                          <div className="flex justify-between items-center">
-                            <div>
-                              <p className="font-medium">{patient.profile.name}</p>
-                              <p className="text-sm text-muted-foreground">
-                                {patient.age}y, {patient.sex} • {patient.profile.phone}
-                              </p>
-                            </div>
-                            {patient.aadhaar_verified && (
-                              <Badge variant="secondary" className="text-xs">Verified</Badge>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                      {filteredPatients.length === 0 && searchTerm && (
-                        <p className="text-center text-muted-foreground py-4">
-                          No patients found
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Create Medical Record */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Create Medical Record</CardTitle>
-                  <CardDescription>Add a new consultation record</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div>
-                      <Label htmlFor="diagnosis">Diagnosis *</Label>
-                      <Input
-                        id="diagnosis"
-                        placeholder="Enter primary diagnosis"
-                        value={newRecord.diagnosis}
-                        onChange={(e) => setNewRecord(prev => ({ ...prev, diagnosis: e.target.value }))}
-                      />
-                    </div>
-
-                    <div>
-                      <Label htmlFor="symptoms">Symptoms</Label>
-                      <Input
-                        id="symptoms"
-                        placeholder="Enter symptoms (comma-separated)"
-                        value={newRecord.symptoms}
-                        onChange={(e) => setNewRecord(prev => ({ ...prev, symptoms: e.target.value }))}
-                      />
-                    </div>
-
-                    <div>
-                      <Label htmlFor="notes">Clinical Notes</Label>
-                      <Textarea
-                        id="notes"
-                        placeholder="Enter detailed notes about the consultation"
-                        value={newRecord.notes}
-                        onChange={(e) => setNewRecord(prev => ({ ...prev, notes: e.target.value }))}
-                        rows={3}
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <Label htmlFor="blood_pressure">Blood Pressure</Label>
-                        <Input
-                          id="blood_pressure"
-                          placeholder="120/80"
-                          value={newRecord.vital_signs.blood_pressure}
-                          onChange={(e) => setNewRecord(prev => ({ 
-                            ...prev, 
-                            vital_signs: { ...prev.vital_signs, blood_pressure: e.target.value }
-                          }))}
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor="heart_rate">Heart Rate</Label>
-                        <Input
-                          id="heart_rate"
-                          placeholder="72 bpm"
-                          value={newRecord.vital_signs.heart_rate}
-                          onChange={(e) => setNewRecord(prev => ({ 
-                            ...prev, 
-                            vital_signs: { ...prev.vital_signs, heart_rate: e.target.value }
-                          }))}
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor="temperature">Temperature</Label>
-                        <Input
-                          id="temperature"
-                          placeholder="98.6°F"
-                          value={newRecord.vital_signs.temperature}
-                          onChange={(e) => setNewRecord(prev => ({ 
-                            ...prev, 
-                            vital_signs: { ...prev.vital_signs, temperature: e.target.value }
-                          }))}
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor="weight">Weight</Label>
-                        <Input
-                          id="weight"
-                          placeholder="70 kg"
-                          value={newRecord.vital_signs.weight}
-                          onChange={(e) => setNewRecord(prev => ({ 
-                            ...prev, 
-                            vital_signs: { ...prev.vital_signs, weight: e.target.value }
-                          }))}
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <Label htmlFor="follow_up">Follow-up Date</Label>
-                      <Input
-                        id="follow_up"
-                        type="date"
-                        value={newRecord.follow_up_date}
-                        onChange={(e) => setNewRecord(prev => ({ ...prev, follow_up_date: e.target.value }))}
-                      />
-                    </div>
-
-                    <Button 
-                      onClick={createMedicalRecord} 
-                      className="w-full"
-                      disabled={!newRecord.patient_id || !newRecord.diagnosis}
-                    >
-                      <Plus className="w-4 h-4 mr-2" />
-                      Create Medical Record
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="records" className="space-y-6">
+          <TabsContent value="appointments" className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>Medical Records</CardTitle>
-                <CardDescription>All consultation records you've created</CardDescription>
+                <CardTitle>Scheduled Appointments</CardTitle>
+                <CardDescription>Manage your upcoming and completed appointments</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {medicalRecords.map((record) => (
-                    <div key={record.id} className="border rounded-lg p-4">
-                      <div className="flex justify-between items-start mb-3">
-                        <div>
-                          <h3 className="font-semibold">{record.diagnosis}</h3>
-                          <p className="text-muted-foreground">
-                            {record.patient_profile.profile.name} • {record.patient_profile.age}y, {record.patient_profile.sex}
-                          </p>
+                  {appointments
+                    .sort((a, b) => new Date(a.appointmentDate).getTime() - new Date(b.appointmentDate).getTime())
+                    .map((appointment) => (
+                    <Card key={appointment.id} className="p-4">
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <div className="flex items-center space-x-3 mb-2">
+                            <h3 className="font-semibold">{appointment.patientName}</h3>
+                            <Badge variant={getStatusBadgeVariant(appointment.status)}>
+                              {appointment.status}
+                            </Badge>
+                          </div>
+                          
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-muted-foreground">
+                            <div>
+                              <p><strong>Age:</strong> {appointment.patientAge} years</p>
+                              <p><strong>Type:</strong> {appointment.type}</p>
+                            </div>
+                            <div>
+                              <p><strong>Date:</strong> {format(new Date(appointment.appointmentDate), 'MMM dd, yyyy')}</p>
+                              <p><strong>Time:</strong> {appointment.appointmentTime}</p>
+                            </div>
+                            <div>
+                              {appointment.notes && (
+                                <p><strong>Notes:</strong> {appointment.notes}</p>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                        <div className="text-right">
-                          <p className="text-sm font-medium">
-                            {format(new Date(record.visit_date), 'MMM dd, yyyy')}
-                          </p>
-                          {record.follow_up_date && (
-                            <p className="text-xs text-muted-foreground">
-                              Follow-up: {format(new Date(record.follow_up_date), 'MMM dd')}
-                            </p>
+                        
+                        <div className="ml-4 flex space-x-2">
+                          {appointment.status === 'upcoming' && (
+                            <>
+                              <Button size="sm" variant="outline">
+                                <Eye className="w-4 h-4 mr-2" />
+                                View
+                              </Button>
+                              <Button size="sm">
+                                <Stethoscope className="w-4 h-4 mr-2" />
+                                Start
+                              </Button>
+                            </>
+                          )}
+                          {appointment.status === 'completed' && (
+                            <Button size="sm" variant="outline">
+                              <FileText className="w-4 h-4 mr-2" />
+                              Records
+                            </Button>
                           )}
                         </div>
                       </div>
-                      
-                      {record.symptoms && record.symptoms.length > 0 && (
-                        <div className="mb-2">
-                          <p className="text-sm font-medium mb-1">Symptoms:</p>
-                          <div className="flex flex-wrap gap-1">
-                            {record.symptoms.map((symptom, index) => (
-                              <Badge key={index} variant="secondary" className="text-xs">
-                                {symptom}
-                              </Badge>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      
-                      {record.notes && (
-                        <p className="text-sm text-muted-foreground mt-2">{record.notes}</p>
-                      )}
-                    </div>
+                    </Card>
                   ))}
-                  {medicalRecords.length === 0 && (
-                    <div className="text-center py-12">
-                      <FileText className="w-12 h-12 mx-auto mb-4 text-muted-foreground/50" />
-                      <p className="text-muted-foreground">No medical records created yet</p>
+                  {appointments.length === 0 && (
+                    <div className="text-center py-8">
+                      <Calendar className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                      <p className="text-muted-foreground">No appointments scheduled</p>
+                      <p className="text-sm text-muted-foreground">Your appointments will appear here</p>
                     </div>
                   )}
                 </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="qr-verify" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Patient QR Code Verification</CardTitle>
+                <CardDescription>Scan or enter patient QR code to verify and access medical records</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="flex space-x-4">
+                  <div className="flex-1">
+                    <Label htmlFor="qrCode">Patient QR Code</Label>
+                    <Input
+                      id="qrCode"
+                      value={qrCode}
+                      onChange={(e) => setQrCode(e.target.value)}
+                      placeholder="Enter or scan patient QR code"
+                    />
+                  </div>
+                  <div className="flex items-end">
+                    <Button onClick={verifyQRCode} disabled={loading}>
+                      {loading ? 'Verifying...' : 'Verify Patient'}
+                    </Button>
+                  </div>
+                </div>
+
+                {verifiedPatient && (
+                  <Card className="border-green-200 bg-green-50">
+                    <CardHeader>
+                      <CardTitle className="text-green-800 flex items-center">
+                        <QrCode className="w-5 h-5 mr-2" />
+                        Patient Verified Successfully
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <p><strong>Name:</strong> {verifiedPatient.patientName}</p>
+                          <p><strong>Age:</strong> {verifiedPatient.patientAge} years</p>
+                          <p><strong>Sex:</strong> {verifiedPatient.patientSex}</p>
+                          <p><strong>Patient ID:</strong> {verifiedPatient.patientId}</p>
+                        </div>
+                        <div>
+                          <p><strong>Medical History:</strong></p>
+                          <ul className="list-disc list-inside text-sm">
+                            {verifiedPatient.medicalHistory.map((item, index) => (
+                              <li key={index}>{item}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                      
+                      <div className="mt-4 flex space-x-2">
+                        <Button onClick={() => setShowPrescriptionForm(true)}>
+                          <Pill className="w-4 h-4 mr-2" />
+                          Create Prescription
+                        </Button>
+                        <Button variant="outline">
+                          <FileText className="w-4 h-4 mr-2" />
+                          View Records
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -703,109 +504,150 @@ const DoctorDashboard = () => {
           <TabsContent value="prescriptions" className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>Prescriptions</CardTitle>
-                <CardDescription>All prescriptions you've issued</CardDescription>
+                <CardTitle>Create Digital Prescription</CardTitle>
+                <CardDescription>Create a new prescription for verified patients</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  {prescriptions.map((prescription) => (
-                    <div key={prescription.id} className="border rounded-lg p-4">
-                      <div className="flex justify-between items-start mb-3">
-                        <div>
-                          <h3 className="font-semibold">#{prescription.prescription_number}</h3>
-                          <p className="text-muted-foreground">
-                            {prescription.patient_profile.profile.name}
-                          </p>
+                {!verifiedPatient ? (
+                  <div className="text-center py-8">
+                    <QrCode className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                    <p className="text-muted-foreground">Please verify a patient first</p>
+                    <p className="text-sm text-muted-foreground">Use the QR Verification tab to verify a patient before creating a prescription</p>
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                    {/* Patient Info */}
+                    <Card className="bg-muted">
+                      <CardContent className="p-4">
+                        <h3 className="font-semibold mb-2">Patient Information</h3>
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                          <p><strong>Name:</strong> {verifiedPatient.patientName}</p>
+                          <p><strong>Age:</strong> {verifiedPatient.patientAge} years</p>
+                          <p><strong>Sex:</strong> {verifiedPatient.patientSex}</p>
+                          <p><strong>Patient ID:</strong> {verifiedPatient.patientId}</p>
                         </div>
-                        <div className="text-right">
-                          <p className="text-sm font-medium">
-                            {format(new Date(prescription.issued_date), 'MMM dd, yyyy')}
-                          </p>
-                          <Badge variant="secondary">{prescription.status}</Badge>
-                        </div>
+                      </CardContent>
+                    </Card>
+
+                    {/* Prescription Form */}
+                    <div className="space-y-4">
+                      <div>
+                        <Label htmlFor="diagnosis">Diagnosis</Label>
+                        <Input
+                          id="diagnosis"
+                          value={prescriptionForm.diagnosis}
+                          onChange={(e) => setPrescriptionForm(prev => ({ ...prev, diagnosis: e.target.value }))}
+                          placeholder="Enter diagnosis"
+                        />
                       </div>
-                      
-                      <div className="text-sm text-muted-foreground">
-                        <p>Medications: {prescription.prescription_items.map(item => 
-                          item.medication.name
-                        ).join(', ')}</p>
+
+                      <div>
+                        <div className="flex justify-between items-center mb-4">
+                          <Label>Medicines</Label>
+                          <Button type="button" variant="outline" size="sm" onClick={addMedicine}>
+                            <Plus className="w-4 h-4 mr-2" />
+                            Add Medicine
+                          </Button>
+                        </div>
+                        
+                        {prescriptionForm.medicines.map((medicine, index) => (
+                          <Card key={index} className="mb-4 p-4">
+                            <div className="flex justify-between items-start mb-4">
+                              <h4 className="font-medium">Medicine {index + 1}</h4>
+                              {prescriptionForm.medicines.length > 1 && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => removeMedicine(index)}
+                                  className="text-destructive"
+                                >
+                                  Remove
+                                </Button>
+                              )}
+                            </div>
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                <Label>Medicine Name</Label>
+                                <Input
+                                  value={medicine.name}
+                                  onChange={(e) => updateMedicine(index, 'name', e.target.value)}
+                                  placeholder="e.g., Paracetamol"
+                                />
+                              </div>
+                              <div>
+                                <Label>Dosage</Label>
+                                <Input
+                                  value={medicine.dosage}
+                                  onChange={(e) => updateMedicine(index, 'dosage', e.target.value)}
+                                  placeholder="e.g., 500mg"
+                                />
+                              </div>
+                              <div>
+                                <Label>Frequency</Label>
+                                <Input
+                                  value={medicine.frequency}
+                                  onChange={(e) => updateMedicine(index, 'frequency', e.target.value)}
+                                  placeholder="e.g., Twice daily"
+                                />
+                              </div>
+                              <div>
+                                <Label>Duration</Label>
+                                <Input
+                                  value={medicine.duration}
+                                  onChange={(e) => updateMedicine(index, 'duration', e.target.value)}
+                                  placeholder="e.g., 5 days"
+                                />
+                              </div>
+                            </div>
+                            
+                            <div className="mt-4">
+                              <Label>Instructions</Label>
+                              <Input
+                                value={medicine.instructions}
+                                onChange={(e) => updateMedicine(index, 'instructions', e.target.value)}
+                                placeholder="e.g., Take after meals"
+                              />
+                            </div>
+                          </Card>
+                        ))}
+                      </div>
+
+                      <div>
+                        <Label htmlFor="notes">Additional Notes</Label>
+                        <Textarea
+                          id="notes"
+                          value={prescriptionForm.notes}
+                          onChange={(e) => setPrescriptionForm(prev => ({ ...prev, notes: e.target.value }))}
+                          placeholder="Additional instructions or notes for the patient"
+                          rows={3}
+                        />
+                      </div>
+
+                      <div className="flex space-x-4">
+                        <Button onClick={createPrescription} disabled={loading}>
+                          {loading ? 'Creating...' : 'Create Prescription'}
+                        </Button>
+                        <Button variant="outline" onClick={() => {
+                          setPrescriptionForm({
+                            patientId: '',
+                            patientName: '',
+                            diagnosis: '',
+                            medicines: [{ name: '', dosage: '', frequency: '', duration: '', instructions: '' }],
+                            notes: ''
+                          });
+                          setVerifiedPatient(null);
+                          setQrCode('');
+                        }}>
+                          Cancel
+                        </Button>
                       </div>
                     </div>
-                  ))}
-                  {prescriptions.length === 0 && (
-                    <div className="text-center py-12">
-                      <Pill className="w-12 h-12 mx-auto mb-4 text-muted-foreground/50" />
-                      <p className="text-muted-foreground">No prescriptions issued yet</p>
-                    </div>
-                  )}
-                </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
-          </TabsContent>
-
-          <TabsContent value="analytics" className="space-y-6">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center">
-                    <Brain className="w-5 h-5 mr-2" />
-                    AI Prescription Analytics
-                  </CardTitle>
-                  <CardDescription>AI-powered insights from your prescriptions</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div className="p-4 bg-primary/10 rounded-lg">
-                      <h4 className="font-medium text-primary">Most Prescribed Medications</h4>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        Based on your prescription history, you frequently prescribe antibiotics and pain relievers.
-                      </p>
-                    </div>
-                    <div className="p-4 bg-secondary/10 rounded-lg">
-                      <h4 className="font-medium text-secondary">Treatment Patterns</h4>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        Your patients show a 85% medication adherence rate, above average.
-                      </p>
-                    </div>
-                    <div className="p-4 bg-accent/10 rounded-lg">
-                      <h4 className="font-medium text-accent">Recommendations</h4>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        Consider generic alternatives for cost-effective treatment options.
-                      </p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Practice Statistics</CardTitle>
-                  <CardDescription>Your clinical practice overview</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm font-medium">Average Consultations/Month</span>
-                      <span className="font-bold">{Math.round(medicalRecords.length / 12) || 0}</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm font-medium">Patient Satisfaction</span>
-                      <span className="font-bold">4.8/5</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm font-medium">Follow-up Rate</span>
-                      <span className="font-bold">
-                        {Math.round((medicalRecords.filter(r => r.follow_up_date).length / medicalRecords.length) * 100) || 0}%
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm font-medium">Prescription Accuracy</span>
-                      <span className="font-bold">98%</span>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
           </TabsContent>
         </Tabs>
       </div>

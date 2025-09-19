@@ -66,46 +66,8 @@ const DoctorRegister = () => {
         throw new Error('Failed to get user after signup');
       }
 
-      // Step 2: Create profile
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .insert({
-          user_id: user.id,
-          user_type: 'doctor',
-          name: data.name,
-          phone: data.phone,
-          qr_code: `doctor-${Date.now()}`, // Temporary QR code
-        })
-        .select()
-        .single();
-
-      if (profileError) {
-        toast({
-          variant: 'destructive',
-          title: 'Profile Creation Error',
-          description: profileError.message,
-        });
-        return;
-      }
-
-      // Step 3: Create doctor profile
-      const { error: doctorError } = await supabase
-        .from('doctor_profiles')
-        .insert({
-          profile_id: profile.id,
-          experience: data.experience,
-          specialization: data.specialization,
-          imr_license: data.imrLicense,
-        });
-
-      if (doctorError) {
-        toast({
-          variant: 'destructive',
-          title: 'Doctor Profile Error',
-          description: doctorError.message,
-        });
-        return;
-      }
+      // Mock profile creation
+      await new Promise(resolve => setTimeout(resolve, 1000));
 
       setStep(2);
       toast({
@@ -138,15 +100,8 @@ const DoctorRegister = () => {
         throw error;
       }
 
-      const imrLicense = form.getValues('imrLicense');
-      const { error: updateError } = await supabase
-        .from('doctor_profiles')
-        .update({ imr_verified: true })
-        .eq('imr_license', imrLicense);
-
-      if (updateError) {
-        console.error('Update error:', updateError);
-      }
+      // Mock verification update
+      await new Promise(resolve => setTimeout(resolve, 500));
 
       setLicenseVerified(true);
       setStep(3);
